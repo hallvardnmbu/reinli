@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as WebIFC from "web-ifc";
 
 const loaderEl = document.getElementById("loader");
@@ -217,104 +218,7 @@ recenterBtn.addEventListener("click", () => {
   controls.update();
 });
 
-// ── Point cloud — lazy, streaming, subsampled ─────────────────────────────
-
-// Streams a binary-little-endian PLY, keeping only 1-in-KEEP_EVERY points.
-// Peak extra RAM ≈ one fetch chunk (~1 MB) + the output geometry.
-async function streamPLY(url, keepEvery = 20) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`PLY fetch failed: ${res.status}`);
-  const reader = res.body.getReader();
-
-  // Accumulate until we have the full header
-  let pending = new Uint8Array(0);
-  let dataStart = -1;
-
-  while (dataStart === -1) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    const next = new Uint8Array(pending.length + value.length);
-    next.set(pending); next.set(value, pending.length);
-    pending = next;
-    // header is ASCII; safe to indexOf as string
-    const text = new TextDecoder().decode(pending);
-    const idx = text.indexOf("end_header\n");
-    if (idx !== -1) dataStart = idx + "end_header\n".length;
-  }
-
-  // Parse header
-  const header = new TextDecoder().decode(pending.slice(0, dataStart));
-  const lines  = header.split("\n").map(l => l.trim());
-
-  if (!lines.some(l => l.startsWith("format binary_little_endian")))
-    throw new Error("PLY: only binary_little_endian is supported");
-
-  let vertexCount = 0;
-  const props = [];
-  const TYPE_SIZE = { float: 4, double: 8, int: 4, uint: 4, short: 2, ushort: 2, uchar: 1, char: 1 };
-
-  for (const line of lines) {
-    if (line.startsWith("element vertex")) vertexCount = parseInt(line.split(" ")[2]);
-    if (line.startsWith("property")) {
-      const [, type, name] = line.split(" ");
-      props.push({ type, name, size: TYPE_SIZE[type] ?? 0 });
-    }
-  }
-
-  const stride = props.reduce((s, p) => s + p.size, 0);
-  let off = 0;
-  const offsets = {};
-  for (const p of props) { offsets[p.name] = off; off += p.size; }
-
-  const { x: xO, y: yO, z: zO, red: rO, green: gO, blue: bO } = offsets;
-  const hasColor = rO !== undefined;
-  const kept     = Math.ceil(vertexCount / keepEvery);
-  const pos      = new Float32Array(kept * 3);
-  const col      = hasColor ? new Float32Array(kept * 3) : null;
-
-  let carry   = pending.slice(dataStart);
-  let vIdx    = 0; // global vertex counter
-  let kIdx    = 0; // kept vertex counter
-
-  function processBuffer(buf) {
-    let o = 0;
-    const view = new DataView(buf.buffer, buf.byteOffset);
-    while (o + stride <= buf.length) {
-      if (vIdx % keepEvery === 0 && kIdx < kept) {
-        pos[kIdx * 3]     = view.getFloat32(o + xO, true);
-        pos[kIdx * 3 + 1] = view.getFloat32(o + yO, true);
-        pos[kIdx * 3 + 2] = view.getFloat32(o + zO, true);
-        if (col) {
-          col[kIdx * 3]     = buf[o + rO] / 255;
-          col[kIdx * 3 + 1] = buf[o + gO] / 255;
-          col[kIdx * 3 + 2] = buf[o + bO] / 255;
-        }
-        kIdx++;
-      }
-      o += stride; vIdx++;
-    }
-    return buf.slice(o); // leftover partial vertex
-  }
-
-  carry = processBuffer(carry);
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    if (carry.length > 0) {
-      const merged = new Uint8Array(carry.length + value.length);
-      merged.set(carry); merged.set(value, carry.length);
-      carry = processBuffer(merged);
-    } else {
-      carry = processBuffer(value);
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(pos.slice(0, kIdx * 3), 3));
-  if (col) geometry.setAttribute("color", new THREE.BufferAttribute(col.slice(0, kIdx * 3), 3));
-  return geometry;
-}
+// ── Point cloud — lazy GLB load ───────────────────────────────────────────
 
 // Button is always visible; cloud loads on first click only
 let cloud = null;
@@ -328,19 +232,24 @@ cloudToggleBtn.addEventListener("click", async () => {
   cloudToggleBtn.disabled = true;
   cloudToggleBtn.querySelector("#cloud-toggle-label").textContent = "Loading…";
 
-  const geo = await streamPLY("/models/cloud.ply", 20);
-  // Apply the same coordinate shift web-ifc used for COORDINATE_TO_ORIGIN
-  const coordMat = ifcApi.GetCoordinationMatrix(modelID);
-  const m4 = new THREE.Matrix4().fromArray(coordMat);
-  geo.applyMatrix4(m4);
-
-  cloud = new THREE.Points(geo, new THREE.PointsMaterial({
-    size: 0.05,
-    vertexColors: geo.hasAttribute("color"),
-    color: geo.hasAttribute("color") ? 0xffffff : 0xc8b89a,
-    sizeAttenuation: true,
-  }));
+  const gltf = await new GLTFLoader().loadAsync("/models/cloud.glb");
+  cloud = gltf.scene;
   scene.add(cloud);
+
+  // Align cloud to IFC model by matching bounding box centers
+  cloud.updateMatrixWorld(true);
+  const cloudBox = new THREE.Box3().setFromObject(cloud);
+  const cloudCenter = cloudBox.getCenter(new THREE.Vector3());
+  cloud.position.add(center.clone().sub(cloudCenter));
+
+  // DEBUG — remove once aligned
+  cloud.updateMatrixWorld(true);
+  const alignedBox = new THREE.Box3().setFromObject(cloud);
+  console.log("[DEBUG cloud] aligned bbox", alignedBox.min, "→", alignedBox.max);
+  console.log("[DEBUG ifc]   bbox        ", bbox.min, "→", bbox.max);
+  scene.add(new THREE.Box3Helper(alignedBox, 0xff0000));
+  scene.add(new THREE.Box3Helper(bbox, 0x00ff00));
+  // END DEBUG
 
   cloudToggleBtn.disabled = false;
   cloudToggleBtn.querySelector("#cloud-toggle-label").textContent = "Cloud";
