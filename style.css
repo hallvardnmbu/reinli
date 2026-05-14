@@ -262,6 +262,23 @@ header {
     color: var(--muted);
 }
 
+/* ── Mobile ── */
+@media (max-width: 600px) {
+    .hint {
+        display: none;
+    }
+
+    #top-right {
+        top: unset;
+        right: unset;
+        bottom: 2.5rem;
+        left: 50%;
+        transform: translateX(-50%);
+        flex-direction: row;
+        justify-content: center;
+    }
+}
+
 /* thin vertical rule left of header */
 header::before {
     content: "";
