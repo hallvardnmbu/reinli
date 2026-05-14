@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as WebIFC from "web-ifc";
 
 const loaderEl = document.getElementById("loader");
@@ -218,43 +217,124 @@ recenterBtn.addEventListener("click", () => {
   controls.update();
 });
 
-// ── Point cloud — lazy GLB load ───────────────────────────────────────────
+// ── Point cloud ────────────────────────────────────────────────────────────
 
-// Button is always visible; cloud loads on first click only
-let cloud = null;
-cloudToggleBtn.addEventListener("click", async () => {
-  if (cloud) {
-    cloud.visible = !cloud.visible;
-    cloudToggleBtn.classList.toggle("active", cloud.visible);
-    return;
+const geo = await streamPLY("/models/cloud.ply");
+
+// PLY is Z-up (survey); Three.js is Y-up — rotate -90° around X to stand it upright,
+// then -13° around Y to match building orientation
+geo.applyMatrix4(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+geo.applyMatrix4(new THREE.Matrix4().makeRotationY(-13 * Math.PI / 180));
+
+// Align to IFC model: center X/Z, pin floor on Y
+geo.computeBoundingBox();
+const cloudCenter = geo.boundingBox.getCenter(new THREE.Vector3());
+geo.translate(
+  center.x - cloudCenter.x - 0.80,
+  bbox.min.y - geo.boundingBox.min.y,
+  center.z - cloudCenter.z,
+);
+
+const cloud = new THREE.Points(geo, new THREE.PointsMaterial({
+  size: 0.05,
+  vertexColors: geo.hasAttribute("color"),
+  color: geo.hasAttribute("color") ? 0xffffff : 0xc8b89a,
+  sizeAttenuation: true,
+}));
+scene.add(cloud);
+
+cloudToggleBtn.classList.add("active");
+cloudToggleBtn.addEventListener("click", () => {
+  cloud.visible = !cloud.visible;
+  cloudToggleBtn.classList.toggle("active", cloud.visible);
+});
+
+async function streamPLY(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`PLY fetch failed: ${res.status}`);
+  const reader = res.body.getReader();
+
+  let pending = new Uint8Array(0);
+  let dataStart = -1;
+
+  while (dataStart === -1) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const next = new Uint8Array(pending.length + value.length);
+    next.set(pending); next.set(value, pending.length);
+    pending = next;
+    const text = new TextDecoder().decode(pending);
+    const idx = text.indexOf("end_header\n");
+    if (idx !== -1) dataStart = idx + "end_header\n".length;
   }
 
-  cloudToggleBtn.disabled = true;
-  cloudToggleBtn.querySelector("#cloud-toggle-label").textContent = "Loading…";
+  const header = new TextDecoder().decode(pending.slice(0, dataStart));
+  const lines  = header.split("\n").map(l => l.trim());
 
-  const gltf = await new GLTFLoader().loadAsync("/models/cloud.glb");
-  cloud = gltf.scene;
-  scene.add(cloud);
+  if (!lines.some(l => l.startsWith("format binary_little_endian")))
+    throw new Error("PLY: only binary_little_endian is supported");
 
-  // Align cloud to IFC model by matching bounding box centers
-  cloud.updateMatrixWorld(true);
-  const cloudBox = new THREE.Box3().setFromObject(cloud);
-  const cloudCenter = cloudBox.getCenter(new THREE.Vector3());
-  cloud.position.add(center.clone().sub(cloudCenter));
+  let vertexCount = 0;
+  const props = [];
+  const TYPE_SIZE = { float: 4, double: 8, int: 4, uint: 4, short: 2, ushort: 2, uchar: 1, char: 1 };
 
-  // DEBUG — remove once aligned
-  cloud.updateMatrixWorld(true);
-  const alignedBox = new THREE.Box3().setFromObject(cloud);
-  console.log("[DEBUG cloud] aligned bbox", alignedBox.min, "→", alignedBox.max);
-  console.log("[DEBUG ifc]   bbox        ", bbox.min, "→", bbox.max);
-  scene.add(new THREE.Box3Helper(alignedBox, 0xff0000));
-  scene.add(new THREE.Box3Helper(bbox, 0x00ff00));
-  // END DEBUG
+  for (const line of lines) {
+    if (line.startsWith("element vertex")) vertexCount = parseInt(line.split(" ")[2]);
+    if (line.startsWith("property")) {
+      const [, type, name] = line.split(" ");
+      props.push({ type, name, size: TYPE_SIZE[type] ?? 0 });
+    }
+  }
 
-  cloudToggleBtn.disabled = false;
-  cloudToggleBtn.querySelector("#cloud-toggle-label").textContent = "Cloud";
-  cloudToggleBtn.classList.add("active");
-});
+  const stride = props.reduce((s, p) => s + p.size, 0);
+  let off = 0;
+  const offsets = {};
+  for (const p of props) { offsets[p.name] = off; off += p.size; }
+
+  const { x: xO, y: yO, z: zO, red: rO, green: gO, blue: bO } = offsets;
+  const hasColor = rO !== undefined;
+  const pos = new Float32Array(vertexCount * 3);
+  const col = hasColor ? new Float32Array(vertexCount * 3) : null;
+
+  let carry = pending.slice(dataStart);
+  let kIdx = 0;
+
+  function processBuffer(buf) {
+    let o = 0;
+    const view = new DataView(buf.buffer, buf.byteOffset);
+    while (o + stride <= buf.length) {
+      pos[kIdx * 3]     = view.getFloat32(o + xO, true);
+      pos[kIdx * 3 + 1] = view.getFloat32(o + yO, true);
+      pos[kIdx * 3 + 2] = view.getFloat32(o + zO, true);
+      if (col) {
+        col[kIdx * 3]     = buf[o + rO] / 255;
+        col[kIdx * 3 + 1] = buf[o + gO] / 255;
+        col[kIdx * 3 + 2] = buf[o + bO] / 255;
+      }
+      kIdx++;
+      o += stride;
+    }
+    return buf.slice(o);
+  }
+
+  carry = processBuffer(carry);
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (carry.length > 0) {
+      const merged = new Uint8Array(carry.length + value.length);
+      merged.set(carry); merged.set(value, carry.length);
+      carry = processBuffer(merged);
+    } else {
+      carry = processBuffer(value);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(pos.slice(0, kIdx * 3), 3));
+  if (col) geometry.setAttribute("color", new THREE.BufferAttribute(col.slice(0, kIdx * 3), 3));
+  return geometry;
+}
 
 // ── Done ──────────────────────────────────────────────────────────────────
 
