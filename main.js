@@ -2,15 +2,19 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as WebIFC from "web-ifc";
 
-const loaderEl = document.getElementById("loader");
-const hintEl = document.getElementById("hint");
+const loaderEl    = document.getElementById("loader");
+const hintEl      = document.getElementById("hint");
+const infoPanel   = document.getElementById("info-panel");
+const infoType    = document.getElementById("info-type");
+const infoName    = document.getElementById("info-name");
+const infoId      = document.getElementById("info-id");
+const infoClose   = document.getElementById("info-close");
 
 // ── Renderer ───────────────────────────────────────────────────────────────
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(devicePixelRatio);
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
 document.getElementById("viewer").appendChild(renderer.domElement);
 
 window.addEventListener("resize", () => {
@@ -41,105 +45,147 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 
-// ── IFC loading (single-threaded, no workers) ─────────────────────────────
+// ── IFC loading ────────────────────────────────────────────────────────────
 
 const ifcApi = new WebIFC.IfcAPI();
 ifcApi.SetWasmPath("/", true);
 await ifcApi.Init();
 
 const response = await fetch("/models/church.ifc");
-const buffer = new Uint8Array(await response.arrayBuffer());
-const modelID = ifcApi.OpenModel(buffer, { COORDINATE_TO_ORIGIN: true });
+const buffer   = new Uint8Array(await response.arrayBuffer());
+const modelID  = ifcApi.OpenModel(buffer, { COORDINATE_TO_ORIGIN: true });
 
-// Shared material per colour, keyed by hex string
-const materials = new Map();
-function getMaterial(r, g, b, a) {
-  const hex = `${r.toFixed(2)},${g.toFixed(2)},${b.toFixed(2)},${a.toFixed(2)}`;
-  if (!materials.has(hex)) {
-    materials.set(
-      hex,
-      new THREE.MeshLambertMaterial({
-        color: new THREE.Color(r, g, b),
-        transparent: a < 0.99,
-        opacity: a,
-        side: THREE.DoubleSide,
-      }),
-    );
-  }
-  return materials.get(hex);
+// Build reverse lookup: IFC type number → name string (e.g. 3701648567 → "IFCWALL")
+const ifcTypeNames = {};
+for (const [k, v] of Object.entries(WebIFC)) {
+  if (typeof v === "number" && k.startsWith("IFC")) ifcTypeNames[v] = k;
 }
 
-// Extract all geometry from the model
+// Shared materials per colour
+const materials = new Map();
+function getMaterial(r, g, b, a) {
+  const key = `${r.toFixed(2)},${g.toFixed(2)},${b.toFixed(2)},${a.toFixed(2)}`;
+  if (!materials.has(key)) {
+    materials.set(key, new THREE.MeshLambertMaterial({
+      color: new THREE.Color(r, g, b),
+      transparent: a < 0.99,
+      opacity: a,
+      side: THREE.DoubleSide,
+    }));
+  }
+  return materials.get(key);
+}
+
+// All renderable meshes (for raycasting)
+const pickableMeshes = [];
+
 ifcApi.StreamAllMeshes(modelID, (mesh) => {
-  const placedGeometries = mesh.geometries;
+  const placed = mesh.geometries;
+  for (let i = 0; i < placed.size(); i++) {
+    const p        = placed.get(i);
+    const geom     = ifcApi.GetGeometry(modelID, p.geometryExpressID);
+    const idxData  = ifcApi.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
+    const vertData = ifcApi.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize());
 
-  for (let i = 0; i < placedGeometries.size(); i++) {
-    const placed = placedGeometries.get(i);
-    const geomData = ifcApi.GetGeometry(modelID, placed.geometryExpressID);
-    const verts = ifcApi.GetRawLineData ? null : null; // unused
-    const idxData = ifcApi.GetIndexArray(geomData.GetIndexData(), geomData.GetIndexDataSize());
-    const vertData = ifcApi.GetVertexArray(geomData.GetVertexData(), geomData.GetVertexDataSize());
-
-    const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(vertData.length / 2);
-    const normals = new Float32Array(vertData.length / 2);
-
+    const normals   = new Float32Array(vertData.length / 2);
     for (let j = 0; j < vertData.length; j += 6) {
-      const base = j / 2;
-      positions[base] = vertData[j];
-      positions[base + 1] = vertData[j + 1];
-      positions[base + 2] = vertData[j + 2];
-      normals[base] = vertData[j + 3];
-      normals[base + 1] = vertData[j + 4];
-      normals[base + 2] = vertData[j + 5];
+      const b = j / 2;
+      positions[b]     = vertData[j];
+      positions[b + 1] = vertData[j + 1];
+      positions[b + 2] = vertData[j + 2];
+      normals[b]       = vertData[j + 3];
+      normals[b + 1]   = vertData[j + 4];
+      normals[b + 2]   = vertData[j + 5];
     }
 
+    const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute("normal",   new THREE.BufferAttribute(normals, 3));
     geometry.setIndex(new THREE.BufferAttribute(idxData, 1));
 
-    const col = placed.color;
+    const col   = p.color;
     const mesh3 = new THREE.Mesh(geometry, getMaterial(col.x, col.y, col.z, col.w));
 
-    const m = placed.flatTransformation;
+    const m = p.flatTransformation;
     mesh3.matrix.set(
-      m[0],
-      m[4],
-      m[8],
-      m[12],
-      m[1],
-      m[5],
-      m[9],
-      m[13],
-      m[2],
-      m[6],
-      m[10],
-      m[14],
-      m[3],
-      m[7],
-      m[11],
-      m[15],
+      m[0], m[4], m[8],  m[12],
+      m[1], m[5], m[9],  m[13],
+      m[2], m[6], m[10], m[14],
+      m[3], m[7], m[11], m[15],
     );
     mesh3.matrixAutoUpdate = false;
+    mesh3.userData.expressID = mesh.expressID;
 
     scene.add(mesh3);
-    geomData.delete();
+    pickableMeshes.push(mesh3);
+    geom.delete();
   }
 });
 
-ifcApi.CloseModel(modelID);
+// Ensure world matrices are current for raycasting
+scene.updateMatrixWorld();
 
 // ── Fit camera ────────────────────────────────────────────────────────────
 
-const bbox = new THREE.Box3().setFromObject(scene);
+const bbox   = new THREE.Box3().setFromObject(scene);
 const center = bbox.getCenter(new THREE.Vector3());
-const size = bbox.getSize(new THREE.Vector3());
+const size   = bbox.getSize(new THREE.Vector3());
 const maxDim = Math.max(size.x, size.y, size.z);
 
 controls.target.copy(center);
 camera.position.set(center.x + maxDim, center.y + maxDim * 0.75, center.z + maxDim);
 camera.lookAt(center);
 controls.update();
+
+// ── Element selection ─────────────────────────────────────────────────────
+
+const raycaster    = new THREE.Raycaster();
+const mouse        = new THREE.Vector2();
+const highlightMat = new THREE.MeshLambertMaterial({
+  color: 0xc8b89a, side: THREE.DoubleSide, transparent: true, opacity: 0.85,
+});
+let selectedMeshes = [];
+
+function deselect() {
+  for (const { mesh, mat } of selectedMeshes) mesh.material = mat;
+  selectedMeshes = [];
+  infoPanel.classList.add("hidden");
+}
+
+function select(expressID) {
+  deselect();
+  for (const m of pickableMeshes) {
+    if (m.userData.expressID !== expressID) continue;
+    selectedMeshes.push({ mesh: m, mat: m.material });
+    m.material = highlightMat;
+  }
+
+  // Fetch name and type from IFC
+  const line     = ifcApi.GetLine(modelID, expressID, false);
+  const typeName = ifcTypeNames[line.type] ?? `Type ${line.type}`;
+  const name     = line.Name?.value ?? line.ObjectType?.value ?? "—";
+
+  infoType.textContent  = typeName.replace("IFC", "");
+  infoName.textContent  = name;
+  infoId.textContent    = `#${expressID}`;
+  infoPanel.classList.remove("hidden");
+}
+
+// Distinguish click from drag
+let pointerMoved = false;
+renderer.domElement.addEventListener("pointerdown", () => { pointerMoved = false; });
+renderer.domElement.addEventListener("pointermove", () => { pointerMoved = true; });
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (pointerMoved) return;
+  mouse.x =  (e.clientX / innerWidth)  * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(pickableMeshes);
+  hits.length ? select(hits[0].object.userData.expressID) : deselect();
+});
+
+infoClose.addEventListener("click", deselect);
 
 // ── Done ──────────────────────────────────────────────────────────────────
 
@@ -151,8 +197,6 @@ renderer.domElement.addEventListener("pointerdown", () => {
   clearTimeout(hintTimer);
   hintTimer = setTimeout(() => hintEl.classList.add("fade"), 5000);
 });
-
-// ── Render loop ───────────────────────────────────────────────────────────
 
 renderer.setAnimationLoop(() => {
   controls.update();
