@@ -2,13 +2,15 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as WebIFC from "web-ifc";
 
-const loaderEl    = document.getElementById("loader");
-const hintEl      = document.getElementById("hint");
-const infoPanel   = document.getElementById("info-panel");
-const infoType    = document.getElementById("info-type");
-const infoName    = document.getElementById("info-name");
-const infoId      = document.getElementById("info-id");
-const infoClose   = document.getElementById("info-close");
+const loaderEl = document.getElementById("loader");
+const hintEl = document.getElementById("hint");
+const infoPanel = document.getElementById("info-panel");
+const infoType = document.getElementById("info-type");
+const infoName = document.getElementById("info-name");
+const infoId = document.getElementById("info-id");
+const infoClose      = document.getElementById("info-close");
+const cloudToggleBtn = document.getElementById("cloud-toggle");
+const recenterBtn    = document.getElementById("recenter");
 
 // ── Renderer ───────────────────────────────────────────────────────────────
 
@@ -51,9 +53,9 @@ const ifcApi = new WebIFC.IfcAPI();
 ifcApi.SetWasmPath("/", true);
 await ifcApi.Init();
 
-const response = await fetch("/models/church.ifc");
-const buffer   = new Uint8Array(await response.arrayBuffer());
-const modelID  = ifcApi.OpenModel(buffer, { COORDINATE_TO_ORIGIN: true });
+const response = await fetch("/models/reinli.ifc");
+const buffer = new Uint8Array(await response.arrayBuffer());
+const modelID = ifcApi.OpenModel(buffer, { COORDINATE_TO_ORIGIN: true });
 
 // Build reverse lookup: IFC type number → name string (e.g. 3701648567 → "IFCWALL")
 const ifcTypeNames = {};
@@ -66,12 +68,15 @@ const materials = new Map();
 function getMaterial(r, g, b, a) {
   const key = `${r.toFixed(2)},${g.toFixed(2)},${b.toFixed(2)},${a.toFixed(2)}`;
   if (!materials.has(key)) {
-    materials.set(key, new THREE.MeshLambertMaterial({
-      color: new THREE.Color(r, g, b),
-      transparent: a < 0.99,
-      opacity: a,
-      side: THREE.DoubleSide,
-    }));
+    materials.set(
+      key,
+      new THREE.MeshLambertMaterial({
+        color: new THREE.Color(r, g, b),
+        transparent: a < 0.99,
+        opacity: a,
+        side: THREE.DoubleSide,
+      }),
+    );
   }
   return materials.get(key);
 }
@@ -82,37 +87,49 @@ const pickableMeshes = [];
 ifcApi.StreamAllMeshes(modelID, (mesh) => {
   const placed = mesh.geometries;
   for (let i = 0; i < placed.size(); i++) {
-    const p        = placed.get(i);
-    const geom     = ifcApi.GetGeometry(modelID, p.geometryExpressID);
-    const idxData  = ifcApi.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
+    const p = placed.get(i);
+    const geom = ifcApi.GetGeometry(modelID, p.geometryExpressID);
+    const idxData = ifcApi.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
     const vertData = ifcApi.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize());
 
     const positions = new Float32Array(vertData.length / 2);
-    const normals   = new Float32Array(vertData.length / 2);
+    const normals = new Float32Array(vertData.length / 2);
     for (let j = 0; j < vertData.length; j += 6) {
       const b = j / 2;
-      positions[b]     = vertData[j];
+      positions[b] = vertData[j];
       positions[b + 1] = vertData[j + 1];
       positions[b + 2] = vertData[j + 2];
-      normals[b]       = vertData[j + 3];
-      normals[b + 1]   = vertData[j + 4];
-      normals[b + 2]   = vertData[j + 5];
+      normals[b] = vertData[j + 3];
+      normals[b + 1] = vertData[j + 4];
+      normals[b + 2] = vertData[j + 5];
     }
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute("normal",   new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
     geometry.setIndex(new THREE.BufferAttribute(idxData, 1));
 
-    const col   = p.color;
+    const col = p.color;
     const mesh3 = new THREE.Mesh(geometry, getMaterial(col.x, col.y, col.z, col.w));
 
     const m = p.flatTransformation;
     mesh3.matrix.set(
-      m[0], m[4], m[8],  m[12],
-      m[1], m[5], m[9],  m[13],
-      m[2], m[6], m[10], m[14],
-      m[3], m[7], m[11], m[15],
+      m[0],
+      m[4],
+      m[8],
+      m[12],
+      m[1],
+      m[5],
+      m[9],
+      m[13],
+      m[2],
+      m[6],
+      m[10],
+      m[14],
+      m[3],
+      m[7],
+      m[11],
+      m[15],
     );
     mesh3.matrixAutoUpdate = false;
     mesh3.userData.expressID = mesh.expressID;
@@ -128,9 +145,9 @@ scene.updateMatrixWorld();
 
 // ── Fit camera ────────────────────────────────────────────────────────────
 
-const bbox   = new THREE.Box3().setFromObject(scene);
+const bbox = new THREE.Box3().setFromObject(scene);
 const center = bbox.getCenter(new THREE.Vector3());
-const size   = bbox.getSize(new THREE.Vector3());
+const size = bbox.getSize(new THREE.Vector3());
 const maxDim = Math.max(size.x, size.y, size.z);
 
 controls.target.copy(center);
@@ -140,10 +157,13 @@ controls.update();
 
 // ── Element selection ─────────────────────────────────────────────────────
 
-const raycaster    = new THREE.Raycaster();
-const mouse        = new THREE.Vector2();
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
 const highlightMat = new THREE.MeshLambertMaterial({
-  color: 0xc8b89a, side: THREE.DoubleSide, transparent: true, opacity: 0.85,
+  color: 0xc8b89a,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.85,
 });
 let selectedMeshes = [];
 
@@ -162,23 +182,27 @@ function select(expressID) {
   }
 
   // Fetch name and type from IFC
-  const line     = ifcApi.GetLine(modelID, expressID, false);
+  const line = ifcApi.GetLine(modelID, expressID, false);
   const typeName = ifcTypeNames[line.type] ?? `Type ${line.type}`;
-  const name     = line.Name?.value ?? line.ObjectType?.value ?? "—";
+  const name = line.Name?.value ?? line.ObjectType?.value ?? "—";
 
-  infoType.textContent  = typeName.replace("IFC", "");
-  infoName.textContent  = name;
-  infoId.textContent    = `#${expressID}`;
+  infoType.textContent = typeName.replace("IFC", "");
+  infoName.textContent = name;
+  infoId.textContent = `#${expressID}`;
   infoPanel.classList.remove("hidden");
 }
 
 // Distinguish click from drag
 let pointerMoved = false;
-renderer.domElement.addEventListener("pointerdown", () => { pointerMoved = false; });
-renderer.domElement.addEventListener("pointermove", () => { pointerMoved = true; });
+renderer.domElement.addEventListener("pointerdown", () => {
+  pointerMoved = false;
+});
+renderer.domElement.addEventListener("pointermove", () => {
+  pointerMoved = true;
+});
 renderer.domElement.addEventListener("pointerup", (e) => {
   if (pointerMoved) return;
-  mouse.x =  (e.clientX / innerWidth)  * 2 - 1;
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObjects(pickableMeshes);
@@ -186,6 +210,142 @@ renderer.domElement.addEventListener("pointerup", (e) => {
 });
 
 infoClose.addEventListener("click", deselect);
+
+recenterBtn.addEventListener("click", () => {
+  controls.target.copy(center);
+  camera.position.set(center.x + maxDim, center.y + maxDim * 0.75, center.z + maxDim);
+  controls.update();
+});
+
+// ── Point cloud — lazy, streaming, subsampled ─────────────────────────────
+
+// Streams a binary-little-endian PLY, keeping only 1-in-KEEP_EVERY points.
+// Peak extra RAM ≈ one fetch chunk (~1 MB) + the output geometry.
+async function streamPLY(url, keepEvery = 20) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`PLY fetch failed: ${res.status}`);
+  const reader = res.body.getReader();
+
+  // Accumulate until we have the full header
+  let pending = new Uint8Array(0);
+  let dataStart = -1;
+
+  while (dataStart === -1) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const next = new Uint8Array(pending.length + value.length);
+    next.set(pending); next.set(value, pending.length);
+    pending = next;
+    // header is ASCII; safe to indexOf as string
+    const text = new TextDecoder().decode(pending);
+    const idx = text.indexOf("end_header\n");
+    if (idx !== -1) dataStart = idx + "end_header\n".length;
+  }
+
+  // Parse header
+  const header = new TextDecoder().decode(pending.slice(0, dataStart));
+  const lines  = header.split("\n").map(l => l.trim());
+
+  if (!lines.some(l => l.startsWith("format binary_little_endian")))
+    throw new Error("PLY: only binary_little_endian is supported");
+
+  let vertexCount = 0;
+  const props = [];
+  const TYPE_SIZE = { float: 4, double: 8, int: 4, uint: 4, short: 2, ushort: 2, uchar: 1, char: 1 };
+
+  for (const line of lines) {
+    if (line.startsWith("element vertex")) vertexCount = parseInt(line.split(" ")[2]);
+    if (line.startsWith("property")) {
+      const [, type, name] = line.split(" ");
+      props.push({ type, name, size: TYPE_SIZE[type] ?? 0 });
+    }
+  }
+
+  const stride = props.reduce((s, p) => s + p.size, 0);
+  let off = 0;
+  const offsets = {};
+  for (const p of props) { offsets[p.name] = off; off += p.size; }
+
+  const { x: xO, y: yO, z: zO, red: rO, green: gO, blue: bO } = offsets;
+  const hasColor = rO !== undefined;
+  const kept     = Math.ceil(vertexCount / keepEvery);
+  const pos      = new Float32Array(kept * 3);
+  const col      = hasColor ? new Float32Array(kept * 3) : null;
+
+  let carry   = pending.slice(dataStart);
+  let vIdx    = 0; // global vertex counter
+  let kIdx    = 0; // kept vertex counter
+
+  function processBuffer(buf) {
+    let o = 0;
+    const view = new DataView(buf.buffer, buf.byteOffset);
+    while (o + stride <= buf.length) {
+      if (vIdx % keepEvery === 0 && kIdx < kept) {
+        pos[kIdx * 3]     = view.getFloat32(o + xO, true);
+        pos[kIdx * 3 + 1] = view.getFloat32(o + yO, true);
+        pos[kIdx * 3 + 2] = view.getFloat32(o + zO, true);
+        if (col) {
+          col[kIdx * 3]     = buf[o + rO] / 255;
+          col[kIdx * 3 + 1] = buf[o + gO] / 255;
+          col[kIdx * 3 + 2] = buf[o + bO] / 255;
+        }
+        kIdx++;
+      }
+      o += stride; vIdx++;
+    }
+    return buf.slice(o); // leftover partial vertex
+  }
+
+  carry = processBuffer(carry);
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (carry.length > 0) {
+      const merged = new Uint8Array(carry.length + value.length);
+      merged.set(carry); merged.set(value, carry.length);
+      carry = processBuffer(merged);
+    } else {
+      carry = processBuffer(value);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(pos.slice(0, kIdx * 3), 3));
+  if (col) geometry.setAttribute("color", new THREE.BufferAttribute(col.slice(0, kIdx * 3), 3));
+  return geometry;
+}
+
+// Button is always visible; cloud loads on first click only
+let cloud = null;
+cloudToggleBtn.addEventListener("click", async () => {
+  if (cloud) {
+    cloud.visible = !cloud.visible;
+    cloudToggleBtn.classList.toggle("active", cloud.visible);
+    return;
+  }
+
+  cloudToggleBtn.disabled = true;
+  cloudToggleBtn.querySelector("#cloud-toggle-label").textContent = "Loading…";
+
+  const geo = await streamPLY("/models/cloud.ply", 20);
+  // Apply the same coordinate shift web-ifc used for COORDINATE_TO_ORIGIN
+  const coordMat = ifcApi.GetCoordinationMatrix(modelID);
+  const m4 = new THREE.Matrix4().fromArray(coordMat);
+  geo.applyMatrix4(m4);
+
+  cloud = new THREE.Points(geo, new THREE.PointsMaterial({
+    size: 0.05,
+    vertexColors: geo.hasAttribute("color"),
+    color: geo.hasAttribute("color") ? 0xffffff : 0xc8b89a,
+    sizeAttenuation: true,
+  }));
+  scene.add(cloud);
+
+  cloudToggleBtn.disabled = false;
+  cloudToggleBtn.querySelector("#cloud-toggle-label").textContent = "Cloud";
+  cloudToggleBtn.classList.add("active");
+});
 
 // ── Done ──────────────────────────────────────────────────────────────────
 

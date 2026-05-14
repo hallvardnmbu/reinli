@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Church — Architecture</title>
+        <title>Reinli</title>
         <link rel="stylesheet" href="/style.css" />
     </head>
     <body>
@@ -16,11 +16,20 @@
 
         <div id="ui">
             <header>
-                <span class="title">Church</span>
-                <span class="subtitle">BIM — Architectural Model</span>
+                <span class="title">Reinli</span>
+                <span class="subtitle">Stavkyrkje</span>
             </header>
             <div class="hint" id="hint">
-                <span>Drag to orbit &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Right-drag to pan &nbsp;·&nbsp; Click to inspect</span>
+                <span
+                    >Drag to orbit &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Right-drag to pan &nbsp;·&nbsp; Click to
+                    inspect</span
+                >
+            </div>
+            <div id="top-right">
+                <button id="recenter" title="Re-centre view">Re-centre</button>
+                <button id="cloud-toggle" title="Toggle point cloud">
+                    <span id="cloud-toggle-label">Point cloud</span>
+                </button>
             </div>
             <div id="info-panel" class="hidden">
                 <button id="info-close" aria-label="Close">×</button>
