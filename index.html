@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Church — Architecture</title>
+        <link rel="stylesheet" href="/style.css" />
+    </head>
+    <body>
+        <div id="loader">
+            <div class="loader-inner">
+                <div class="loader-bar"></div>
+                <p class="loader-label">Loading model</p>
+            </div>
+        </div>
+
+        <div id="ui">
+            <header>
+                <span class="title">Church</span>
+                <span class="subtitle">BIM — Architectural Model</span>
+            </header>
+            <div class="hint" id="hint">
+                <span>Drag to orbit &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Right-drag to pan</span>
+            </div>
+        </div>
+
+        <div id="viewer"></div>
+
+        <script type="module" src="/main.js"></script>
+    </body>
+</html>
