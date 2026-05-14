@@ -3,6 +3,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as WebIFC from "web-ifc";
 
 const loaderEl = document.getElementById("loader");
+const enterBtn = document.getElementById("enter-btn");
+const loaderBody = document.getElementById("loader-body");
 const hintEl = document.getElementById("hint");
 const infoPanel = document.getElementById("info-panel");
 const infoType = document.getElementById("info-type");
@@ -11,6 +13,8 @@ const infoId = document.getElementById("info-id");
 const infoClose      = document.getElementById("info-close");
 const cloudToggleBtn = document.getElementById("cloud-toggle");
 const recenterBtn    = document.getElementById("recenter");
+
+try {
 
 // ── Renderer ───────────────────────────────────────────────────────────────
 
@@ -338,16 +342,27 @@ async function streamPLY(url) {
 
 // ── Done ──────────────────────────────────────────────────────────────────
 
-loaderEl.classList.add("hidden");
-
-let hintTimer = setTimeout(() => hintEl.classList.add("fade"), 5000);
-renderer.domElement.addEventListener("pointerdown", () => {
-  hintEl.classList.remove("fade");
-  clearTimeout(hintTimer);
-  hintTimer = setTimeout(() => hintEl.classList.add("fade"), 5000);
-});
+document.querySelector(".loader-bar").classList.add("done", "ready");
+enterBtn.addEventListener("click", () => {
+  loaderEl.classList.add("hidden");
+  let hintTimer = setTimeout(() => hintEl.classList.add("fade"), 5000);
+  renderer.domElement.addEventListener("pointerdown", () => {
+    hintEl.classList.remove("fade");
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => hintEl.classList.add("fade"), 5000);
+  });
+}, { once: true });
 
 renderer.setAnimationLoop(() => {
   controls.update();
   renderer.render(scene, camera);
 });
+
+} catch (err) {
+  const isSafariVersion = err.message?.includes("emscripten") || err.message?.includes("Safari");
+  loaderBody.textContent = isSafariVersion
+    ? "This viewer requires Safari 15 or later. Please update iOS and try again."
+    : "Failed to load the model. Please try refreshing the page.";
+  document.querySelector(".loader-bar").style.display = "none";
+  enterBtn.style.display = "none";
+}
