@@ -8,7 +8,12 @@ __dirname =
     ? __dirname.replace(/^\/([A-Z]):/, "$1:\\").replace(/\//g, "\\")
     : __dirname;
 
-const reinli = new Elysia().use(staticPlugin({ assets: join(__dirname, "dist"), prefix: "/" }));
+const reinli = new Elysia().all("*", ({ request }) => {
+  const url = new URL(request.url);
+  let filePath = url.pathname === "/" ? "/index.html" : url.pathname;
+  const file = Bun.file(join(join(__dirname, "dist"), filePath));
+  return new Response(file);
+});
 
 export default reinli;
 
