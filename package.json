@@ -21,6 +21,8 @@
   },
   "homepage": "https://github.com/hallvardnmbu/bim#readme",
   "dependencies": {
+    "@elysiajs/static": "^1.4.10",
+    "elysia": "^1.4.28",
     "three": "^0.184.0",
     "vite": "^8.0.12",
     "web-ifc": "^0.0.77"

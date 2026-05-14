@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Reinli</title>
+      <script type="module" crossorigin src="/assets/index-BcsHRuzV.js"></script>
+      <link rel="stylesheet" crossorigin href="/assets/index-B_vrzhHv.css">
+    </head>
+    <body>
+        <div id="loader">
+            <div class="loader-inner">
+                <div class="loader-bar"></div>
+                <p class="loader-label">Loading model</p>
+            </div>
+        </div>
+
+        <div id="ui">
+            <header>
+                <span class="title">Reinli</span>
+                <span class="subtitle">Stavkyrkje</span>
+            </header>
+            <div class="hint" id="hint">
+                <span
+                    >Drag to orbit &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Right-drag to pan &nbsp;·&nbsp; Click to
+                    inspect</span
+                >
+            </div>
+            <div id="top-right">
+                <button id="recenter" title="Re-centre view">Re-centre</button>
+                <button id="cloud-toggle" title="Toggle point cloud">
+                    <span id="cloud-toggle-label">Point cloud</span>
+                </button>
+            </div>
+            <div id="info-panel" class="hidden">
+                <button id="info-close" aria-label="Close">×</button>
+                <p id="info-type"></p>
+                <p id="info-name"></p>
+                <p id="info-id"></p>
+            </div>
+        </div>
+
+        <div id="viewer"></div>
+
+    </body>
+</html>

@@ -1,5 +1,5 @@
 node_modules/
 package-lock.json
 
-public/models/*.e57
-public/models/*.ply
+**/models/*.e57
+**/models/*.ply
