@@ -361,8 +361,8 @@ renderer.setAnimationLoop(() => {
 } catch (err) {
   const isSafariVersion = err.message?.includes("emscripten") || err.message?.includes("Safari");
   loaderBody.textContent = isSafariVersion
-    ? "This viewer requires Safari 15 or later. Please update iOS and try again."
-    : "Failed to load the model. Please try refreshing the page.";
+    ? "Visningen krever Safari 15 eller nyere. Oppdater iOS og prøv igjen."
+    : "Kunne ikke laste modellen. Prøv å laste siden på nytt.";
   document.querySelector(".loader-bar").style.display = "none";
   enterBtn.style.display = "none";
 }
