@@ -7,10 +7,10 @@
 }
 
 :root {
-    --bg: #7a7a84;
-    --text: #e8e4dc;
+    --bg: #ebeae6;
+    --text: #333338;
     --accent: #c8b89a;
-    --muted: rgba(232, 228, 220, 0.8);
+    --muted: rgba(51, 51, 56, 0.65);
     --serif: "Georgia", "Times New Roman", serif;
     --sans: "Helvetica Neue", Arial, sans-serif;
 }
@@ -368,26 +368,42 @@ header {
     -webkit-appearance: none;
     appearance: none;
     flex: 1;
+    min-width: 0;
+    height: 1.75rem;
+    margin: 0;
+    background: transparent;
+    outline: none;
+    cursor: pointer;
+    touch-action: none;
+}
+
+.opacity-row input[type="range"]::-webkit-slider-runnable-track {
     height: 2px;
     background: rgba(200, 184, 154, 0.25);
     border-radius: 1px;
-    outline: none;
-    cursor: pointer;
 }
 
 .opacity-row input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
+    margin-top: -5px;
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;
 }
 
+.opacity-row input[type="range"]::-moz-range-track {
+    height: 2px;
+    background: rgba(200, 184, 154, 0.25);
+    border-radius: 1px;
+    border: none;
+}
+
 .opacity-row input[type="range"]::-moz-range-thumb {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     border: none;
     background: var(--accent);
@@ -558,10 +574,31 @@ header {
     #top-right {
         top: unset;
         right: unset;
-        bottom: 2.5rem;
+        bottom: max(2.5rem, env(safe-area-inset-bottom, 0px));
         left: 50%;
         transform: translateX(-50%);
-        align-items: center;
+        align-items: stretch;
+        width: min(280px, calc(100vw - 2rem));
+    }
+
+    .opacity-row {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .opacity-row input[type="range"] {
+        height: 2.75rem;
+    }
+
+    .opacity-row input[type="range"]::-webkit-slider-thumb {
+        width: 18px;
+        height: 18px;
+        margin-top: -8px;
+    }
+
+    .opacity-row input[type="range"]::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
     }
 
     #top-buttons {
@@ -602,6 +639,10 @@ header {
 
     #info-type {
         margin-top: 0;
+    }
+
+    [data-tip]::after {
+        display: none;
     }
 }
 

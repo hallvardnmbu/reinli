@@ -18,6 +18,7 @@ const infoClose = document.getElementById("info-close");
 const infoProps = document.getElementById("info-props");
 const cloudToggleBtn = document.getElementById("cloud-toggle");
 const modelOpacityEl = document.getElementById("model-opacity");
+const brightnessEl = document.getElementById("brightness");
 const recenterBtn = document.getElementById("recenter");
 const debugValsEl = document.getElementById("debug-vals");
 
@@ -38,15 +39,28 @@ try {
   // ── Scene ──────────────────────────────────────────────────────────────────
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x7a7a84);
+  scene.background = new THREE.Color(
+    getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
+  );
 
-  scene.add(new THREE.AmbientLight(0xfff8f0, 0.8));
-  const sun = new THREE.DirectionalLight(0xfff0e0, 1.8);
+  const ambient = new THREE.AmbientLight(0xfff8f0, 1.05);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight(0xfff0e0, 2.3);
   sun.position.set(60, 120, 80);
   scene.add(sun);
-  const fill = new THREE.DirectionalLight(0x8899cc, 0.6);
+  const fill = new THREE.DirectionalLight(0x8899cc, 0.75);
   fill.position.set(-80, 30, -60);
   scene.add(fill);
+
+  const lightBases = { ambient: ambient.intensity, sun: sun.intensity, fill: fill.intensity };
+  function applyBrightness() {
+    const t = brightnessEl.value / 100;
+    ambient.intensity = lightBases.ambient * t;
+    sun.intensity = lightBases.sun * t;
+    fill.intensity = lightBases.fill * t;
+  }
+  brightnessEl.addEventListener("input", applyBrightness);
+  applyBrightness();
 
   // ── Camera + controls ─────────────────────────────────────────────────────
 
@@ -56,6 +70,21 @@ try {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
+
+  function bindSliderTouch(slider) {
+    slider.addEventListener("pointerdown", (e) => {
+      slider.setPointerCapture(e.pointerId);
+      controls.enabled = false;
+    });
+    const release = (e) => {
+      if (slider.hasPointerCapture?.(e.pointerId)) slider.releasePointerCapture(e.pointerId);
+      controls.enabled = true;
+    };
+    slider.addEventListener("pointerup", release);
+    slider.addEventListener("pointercancel", release);
+  }
+  bindSliderTouch(brightnessEl);
+  bindSliderTouch(modelOpacityEl);
 
   // ── IFC loading ────────────────────────────────────────────────────────────
 
