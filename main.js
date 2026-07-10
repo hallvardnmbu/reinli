@@ -262,45 +262,59 @@ try {
 
     const line = ifcApi.GetLine(modelID, expressID, false);
     const typeName = ifcTypeNames[line.type] ?? `Type ${line.type}`;
+console.log(typeName);
     const name = line.Name?.value ?? line.ObjectType?.value ?? "—";
+	
+switch (typeName) {
+  case "IFCCOLUMN":
+    infoType.textContent = "Stav";
+    break;
 
+  case "IFCBEAM":
+    infoType.textContent = "Bjelke";
+    break;
+
+  case "IFCWALL":
+    infoType.textContent = "Veggtile";
+    break;
+
+  case "IFCROOF":
+    infoType.textContent = "Tak";
+    break;
+
+  case "IFCSLAB":
+    infoType.textContent = "Arkeologisk felt";
+    break;
+
+  case "IFCDOOR":
+    infoType.textContent = "Dør";
+    break;
+
+  case "IFCMEMBER":
+    infoType.textContent = "Stav";
+    break;
+
+  default:
     infoType.textContent = typeName.replace("IFC", "");
+}
     infoName.textContent = name;
 
     const psets = elementPsets.get(expressID) ?? [];
-    const psetRef = psets
-      .find((s) => s.setName === "Pset_BeamCommon" || s.setName === "Pset_ColumnCommon")
-      ?.props.find((p) => p.name === "Reference")?.value;
+    const arkiv = psets.find((s) => s.setName === "Arkiv");
 
-    const candidates = [
-      ["Beskrivelse", line.Description?.value],
-      ["Referanse", psetRef],
-      ["Objekttype", line.ObjectType?.value],
-      ["Forhåndsdefinert", line.PredefinedType?.value],
-    ];
-    const directHTML = candidates
-      .filter(([, v]) => v != null && v !== "" && v !== "NOTDEFINED")
-      .map(
-        ([k, v]) => `<div class="info-prop"><span class="info-key">${k}</span><span class="info-val">${v}</span></div>`,
-      )
-      .join("");
-
-    const psetsHTML = psets
-      .map(
-        ({ setName, props }) =>
-          `<div class="info-pset-name">${setName}</div>` +
-          props
-            .map(
-              ({ name, value }) =>
-                `<div class="info-prop"><span class="info-key">${name}</span><span class="info-val">${value}</span></div>`,
-            )
-            .join(""),
-      )
-      .join("");
-
-    infoProps.innerHTML =
-      directHTML +
-      (psetsHTML ? `<details class="info-psets"><summary>Alle egenskaper</summary>${psetsHTML}</details>` : "");
+if (arkiv) {
+  infoProps.innerHTML = arkiv.props
+    .map(
+      ({ name, value }) =>
+        `<div class="info-prop">
+          <span class="info-key">${name}</span>
+          <span class="info-val">${value}</span>
+        </div>`,
+    )
+    .join("");
+} else {
+  infoProps.innerHTML = "<p>Ingen arkivinformasjon tilgjengelig.</p>";
+}
 
     infoPanel.classList.remove("hidden");
   }
@@ -346,11 +360,11 @@ try {
   const cloudTy = bbox.min.y - gltfBox.min.y;
   const baseTz = center.z - gltfCenter.z;
 
-  let dX = 0.45,
-    dY = 0.45,
-    dZ = 0.5,
+  let dX = 0.85,
+    dY = 0.75,
+    dZ = 0,
     rX = 0,
-    rY = 7,
+    rY = 6.5,
     rZ = 0;
 
   // Fix cloud at aligned position — it stays put while debug mode moves the IFC
