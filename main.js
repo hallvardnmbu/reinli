@@ -5,6 +5,7 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import * as WebIFC from "web-ifc";
 
 const DEBUG = false;
+let INTENSITY = 2.3;
 
 const loaderEl = document.getElementById("loader");
 const enterBtn = document.getElementById("enter-btn");
@@ -43,21 +44,41 @@ try {
     getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
   );
 
-  const ambient = new THREE.AmbientLight(0xfff8f0, 1.05);
-  scene.add(ambient);
-  const sun = new THREE.DirectionalLight(0xfff0e0, 2.3);
-  sun.position.set(60, 120, 80);
-  scene.add(sun);
-  const fill = new THREE.DirectionalLight(0x8899cc, 0.75);
-  fill.position.set(-80, 30, -60);
-  scene.add(fill);
+  // Hemisphere light simulates sky dome (industry standard for architectural viz)
+  const hemisphere = new THREE.HemisphereLight(
+    0xffffff, // sky color (bright white)
+    0xffffff, // ground color (cool gray-blue)
+    INTENSITY * 0.26  // scaled from INTENSITY constant
+  );
+  scene.add(hemisphere);
 
-  const lightBases = { ambient: ambient.intensity, sun: sun.intensity, fill: fill.intensity };
+  // Create directional lights with consistent setup
+  const directionalLights = [
+    [80, 60, 80],
+    [-80, 60, 80],
+    [-80, 60, -80],
+    [80, 60, -80],
+    [0, 0, -80],
+    [0, -60, 0]
+  ].map(position => {
+    const light = new THREE.DirectionalLight(0xfff0e0, INTENSITY);
+    light.position.set(...position);
+    scene.add(light);
+    return light;
+  });
+
+  // Store base intensities for brightness control
+  const lightBases = {
+    hemisphere: hemisphere.intensity,
+    directional: INTENSITY
+  };
+
   function applyBrightness() {
     const t = brightnessEl.value / 100;
-    ambient.intensity = lightBases.ambient * t;
-    sun.intensity = lightBases.sun * t;
-    fill.intensity = lightBases.fill * t;
+    hemisphere.intensity = lightBases.hemisphere * t;
+    for (const light of directionalLights) {
+      light.intensity = lightBases.directional * t;
+    }
   }
   brightnessEl.addEventListener("input", applyBrightness);
   applyBrightness();
@@ -264,7 +285,7 @@ try {
     const typeName = ifcTypeNames[line.type] ?? `Type ${line.type}`;
 console.log(typeName);
     const name = line.Name?.value ?? line.ObjectType?.value ?? "—";
-	
+
 switch (typeName) {
   case "IFCCOLUMN":
     infoType.textContent = "Stav";
@@ -303,12 +324,18 @@ switch (typeName) {
     const arkiv = psets.find((s) => s.setName === "Arkiv");
 
 if (arkiv) {
+  // Helper function to convert URLs in text to clickable links
+  const linkifyUrls = (text) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">Referanse</a>');
+  };
+
   infoProps.innerHTML = arkiv.props
     .map(
       ({ name, value }) =>
         `<div class="info-prop">
           <span class="info-key">${name}</span>
-          <span class="info-val">${value}</span>
+          <span class="info-val">${linkifyUrls(value)}</span>
         </div>`,
     )
     .join("");
