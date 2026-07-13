@@ -4,6 +4,13 @@ An interactive 3D web viewer for **Reinli stavkirke** — a stave church in Rein
 
 The interface is in Norwegian.
 
+## For modifications to the GLB model:
+
+```bash
+bunx gltf-transform optimize public/models/mesh.glb public/models/mesh-compressed.glb --compress draco
+mv public/models/mesh-compressed.glb public/models/mesh.glb
+```
+
 ## Features
 
 - **Dual-model viewing** — A colored GLB mesh is shown by default; toggle the IFC BIM model on top with adjustable transparency.
