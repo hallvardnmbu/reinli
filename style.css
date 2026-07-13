@@ -92,6 +92,16 @@ body {
 }
 
 .loader-attr a:hover {
+    color: var(--text);
+}
+
+#info-props a {
+    color: var(--text);
+    text-decoration: underline;
+    transition: color 0.2s;
+}
+
+#info-props a:hover {
     color: var(--accent);
 }
 
@@ -577,6 +587,53 @@ header {
     border-top: 1px solid rgba(200, 184, 154, 0.1);
 }
 
+/* ── Mobile Menu Toggle ── */
+#mobile-menu-toggle {
+    display: none;
+    position: fixed;
+    top: 2rem;
+    right: 2rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    background: rgba(200, 184, 154, 0.07);
+    border: 1px solid rgba(200, 184, 154, 0.6);
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 30;
+    pointer-events: all;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0;
+    transition: all 0.3s ease;
+}
+
+#mobile-menu-toggle:hover {
+    border-color: var(--accent);
+}
+
+#mobile-menu-toggle span {
+    display: block;
+    width: 1.1rem;
+    height: 2px;
+    background: var(--text);
+    transition: all 0.3s ease;
+    border-radius: 1px;
+}
+
+#mobile-menu-toggle.active span:nth-child(1) {
+    transform: translateY(0.55rem) rotate(45deg);
+}
+
+#mobile-menu-toggle.active span:nth-child(2) {
+    opacity: 0;
+}
+
+#mobile-menu-toggle.active span:nth-child(3) {
+    transform: translateY(-0.55rem) rotate(-45deg);
+}
+
 /* ── Mobile ── */
 @media (max-width: 600px) {
     #loader {
@@ -591,6 +648,10 @@ header {
         display: none;
     }
 
+    #mobile-menu-toggle {
+        display: flex;
+    }
+
     #top-right {
         top: unset;
         right: unset;
@@ -599,6 +660,16 @@ header {
         transform: translateX(-50%);
         align-items: stretch;
         width: min(280px, calc(100vw - 2rem));
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        transform: translateX(-50%) translateY(1rem);
+    }
+
+    #top-right.menu-open {
+        opacity: 1;
+        pointer-events: all;
+        transform: translateX(-50%) translateY(0);
     }
 
     .opacity-row {

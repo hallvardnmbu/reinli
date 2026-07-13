@@ -22,6 +22,8 @@ const modelOpacityEl = document.getElementById("model-opacity");
 const brightnessEl = document.getElementById("brightness");
 const recenterBtn = document.getElementById("recenter");
 const debugValsEl = document.getElementById("debug-vals");
+const mobileMenuToggle = document.getElementById("mobile-menu-toggle");
+const topRight = document.getElementById("top-right");
 
 try {
   // ── Renderer ───────────────────────────────────────────────────────────────
@@ -283,81 +285,50 @@ try {
 
     const line = ifcApi.GetLine(modelID, expressID, false);
     const typeName = ifcTypeNames[line.type] ?? `Type ${line.type}`;
-console.log(typeName);
     const name = line.Name?.value ?? line.ObjectType?.value ?? "—";
 
-switch (typeName) {
-  case "IFCCOLUMN":
-    infoType.textContent = "Stav";
-    break;
-
-  case "IFCBEAM":
-    infoType.textContent = "Bjelke";
-    break;
-
-  case "IFCWALL":
-    infoType.textContent = "Veggtile";
-    break;
-
-  case "IFCROOF":
-    infoType.textContent = "Tak";
-    break;
-
-  case "IFCSLAB":
-    infoType.textContent = "Arkeologisk felt";
-    break;
-
-  case "IFCDOOR":
-    infoType.textContent = "Dør";
-    break;
-
-  case "IFCMEMBER":
-    infoType.textContent = "Stav";
-    break;
-
-  default:
-    infoType.textContent = typeName.replace("IFC", "");
-}
+    const typeTranslations = {
+      IFCCOLUMN: "Stav",
+      IFCBEAM: "Bjelke",
+      IFCWALL: "Veggtile",
+      IFCROOF: "Tak",
+      IFCSLAB: "Arkeologisk felt",
+      IFCDOOR: "Dør",
+      IFCMEMBER: "Stav"
+    };
+    infoType.textContent = typeTranslations[typeName] ?? typeName.replace("IFC", "");
     infoName.textContent = name;
 
     const psets = elementPsets.get(expressID) ?? [];
     const arkiv = psets.find((s) => s.setName === "Arkiv");
 
-if (arkiv) {
-  // Helper function to convert URLs in text to clickable links
-  const linkifyUrls = (text) => {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">Referanse</a>');
-  };
-
-  infoProps.innerHTML = arkiv.props
-    .map(
-      ({ name, value }) =>
-        `<div class="info-prop">
-          <span class="info-key">${name}</span>
-          <span class="info-val">${linkifyUrls(value)}</span>
-        </div>`,
-    )
-    .join("");
-} else {
-  infoProps.innerHTML = "<p>Ingen arkivinformasjon tilgjengelig.</p>";
-}
+    if (arkiv) {
+      infoProps.innerHTML = arkiv.props
+        .map(({ name, value }) => {
+          const linkedValue = value.replace(
+            /(https?:\/\/[^\s]+)/g,
+            '<a href="$1" target="_blank" rel="noopener noreferrer">Referanse</a>'
+          );
+          return `<div class="info-prop">
+            <span class="info-key">${name}</span>
+            <span class="info-val">${linkedValue}</span>
+          </div>`;
+        })
+        .join("");
+    } else {
+      infoProps.innerHTML = "<p>Ingen arkivinformasjon tilgjengelig.</p>";
+    }
 
     infoPanel.classList.remove("hidden");
   }
 
   // Distinguish click from drag
   let pointerMoved = false;
-  renderer.domElement.addEventListener("pointerdown", () => {
-    pointerMoved = false;
-  });
-  renderer.domElement.addEventListener("pointermove", () => {
-    pointerMoved = true;
-  });
+  renderer.domElement.addEventListener("pointerdown", () => (pointerMoved = false));
+  renderer.domElement.addEventListener("pointermove", () => (pointerMoved = true));
   renderer.domElement.addEventListener("pointerup", (e) => {
     if (pointerMoved) return;
-    mouse.x = (e.clientX / innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+    mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(pickableMeshes);
     hits.length ? select(hits[0].object.userData.expressID) : deselect();
@@ -369,6 +340,24 @@ if (arkiv) {
     controls.target.copy(center);
     camera.position.set(center.x + maxDim, center.y + maxDim * 0.75, center.z + maxDim);
     controls.update();
+  });
+
+  // ── Mobile menu toggle ────────────────────────────────────────────────────
+
+  mobileMenuToggle.addEventListener("click", () => {
+    const isOpen = topRight.classList.toggle("menu-open");
+    mobileMenuToggle.classList.toggle("active", isOpen);
+  });
+
+  // Close menu when clicking outside on mobile
+  document.addEventListener("click", (e) => {
+    if (window.innerWidth <= 600 && 
+        topRight.classList.contains("menu-open") &&
+        !topRight.contains(e.target) && 
+        !mobileMenuToggle.contains(e.target)) {
+      topRight.classList.remove("menu-open");
+      mobileMenuToggle.classList.remove("active");
+    }
   });
 
   // ── Point cloud (GLTF mesh) ────────────────────────────────────────────────
