@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Reinli</title>
+        <link rel="preload" href="/models/reinli.ifc" as="fetch" crossorigin />
+        <link rel="preload" href="/models/mesh.glb" as="fetch" crossorigin />
+        <link rel="stylesheet" href="/style.css" />
+    </head>
+    <body>
+        <div id="loader">
+            <div class="loader-inner">
+                <p class="loader-title">Reinli</p>
+                <p class="loader-sub">Stavkirke</p>
+                <p class="loader-body" id="loader-body">
+                    Reinli stavkirke er en enskipet stavkirke som ligger i bygda Reinli i Sør-Aurdal kommune
+                    i Oppland.
+                </p>
+                <p class="loader-attr">
+                    <a
+                        href="https://www.kirken.no/nb-NO/fellesrad/Sor-Aurdal/om-oss/kirkene-vare/reinli-stavkyrkje/"
+                        target="_blank"
+                        rel="noopener"
+                        >kirken.no</a
+                    >
+                </p>
+                <div class="loader-bar" id="enter-btn">
+                    <span class="loader-bar-label">Utforsk</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="ui">
+            <header>
+                <span class="title">Reinli</span>
+                <span class="subtitle">Stavkirke</span>
+            </header>
+            <div class="hint" id="hint">
+                <span
+                    >Dra for å rotere &nbsp;·&nbsp; Rull for å zoome &nbsp;·&nbsp; Høyreklikk-dra for å panorere
+                    &nbsp;·&nbsp; Klikk for å inspisere</span
+                >
+            </div>
+            <div id="top-right">
+                <div id="top-buttons">
+                    <button id="recenter" data-tip="Sentrér visningen">Sentrér</button>
+                    <button id="cloud-toggle" data-tip="Slå modell av/på">
+                        <span id="cloud-toggle-label">Modell</span>
+                    </button>
+                </div>
+                <div class="opacity-row">
+                    <span class="opacity-label">Lysstyrke</span>
+                    <input type="range" id="brightness" min="25" max="200" value="100" />
+                </div>
+                <div class="opacity-row" id="model-opacity-wrap" style="display: none">
+                    <span class="opacity-label">Gjennomsiktighet</span>
+                    <input type="range" id="model-opacity" min="0" max="100" value="50" />
+                </div>
+            </div>
+            <div id="info-panel" class="hidden">
+                <button id="info-close" aria-label="Close">×</button>
+                <div id="info-scroll">
+                    <p id="info-type"></p>
+                    <p id="info-name"></p>
+                    <div id="info-props"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="debug-panel">
+            <pre id="debug-vals"></pre>
+            <div id="debug-hint">WASD · ZX · QE · TFGH · Shift=×5</div>
+        </div>
+
+        <div id="viewer"></div>
+
+        <script type="module" src="/main.js"></script>
+    </body>
+</html>

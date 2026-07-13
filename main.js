@@ -1,0 +1,480 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+import * as WebIFC from "web-ifc";
+
+const DEBUG = false;
+
+const loaderEl = document.getElementById("loader");
+const enterBtn = document.getElementById("enter-btn");
+const loaderBody = document.getElementById("loader-body");
+const hintEl = document.getElementById("hint");
+const infoPanel = document.getElementById("info-panel");
+const infoType = document.getElementById("info-type");
+const infoName = document.getElementById("info-name");
+const infoId = document.getElementById("info-id");
+const infoClose = document.getElementById("info-close");
+const infoProps = document.getElementById("info-props");
+const cloudToggleBtn = document.getElementById("cloud-toggle");
+const modelOpacityEl = document.getElementById("model-opacity");
+const brightnessEl = document.getElementById("brightness");
+const recenterBtn = document.getElementById("recenter");
+const debugValsEl = document.getElementById("debug-vals");
+
+try {
+  // ── Renderer ───────────────────────────────────────────────────────────────
+
+  const renderer = new THREE.WebGLRenderer({ antialias: devicePixelRatio < 2 });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  document.getElementById("viewer").appendChild(renderer.domElement);
+
+  window.addEventListener("resize", () => {
+    renderer.setSize(innerWidth, innerHeight);
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+  });
+
+  // ── Scene ──────────────────────────────────────────────────────────────────
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(
+    getComputedStyle(document.documentElement).getPropertyValue("--bg").trim(),
+  );
+
+  const ambient = new THREE.AmbientLight(0xfff8f0, 1.05);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight(0xfff0e0, 2.3);
+  sun.position.set(60, 120, 80);
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0x8899cc, 0.75);
+  fill.position.set(-80, 30, -60);
+  scene.add(fill);
+
+  const lightBases = { ambient: ambient.intensity, sun: sun.intensity, fill: fill.intensity };
+  function applyBrightness() {
+    const t = brightnessEl.value / 100;
+    ambient.intensity = lightBases.ambient * t;
+    sun.intensity = lightBases.sun * t;
+    fill.intensity = lightBases.fill * t;
+  }
+  brightnessEl.addEventListener("input", applyBrightness);
+  applyBrightness();
+
+  // ── Camera + controls ─────────────────────────────────────────────────────
+
+  const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 5000);
+  camera.position.set(30, 30, 30);
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+
+  function bindSliderTouch(slider) {
+    slider.addEventListener("pointerdown", (e) => {
+      slider.setPointerCapture(e.pointerId);
+      controls.enabled = false;
+    });
+    const release = (e) => {
+      if (slider.hasPointerCapture?.(e.pointerId)) slider.releasePointerCapture(e.pointerId);
+      controls.enabled = true;
+    };
+    slider.addEventListener("pointerup", release);
+    slider.addEventListener("pointercancel", release);
+  }
+  bindSliderTouch(brightnessEl);
+  bindSliderTouch(modelOpacityEl);
+
+  // ── IFC loading ────────────────────────────────────────────────────────────
+
+  // Start GLTF load immediately — it can transfer while WASM loads and IFC parses
+  const dracoLoader = new DRACOLoader().setDecoderPath("/draco/");
+  const gltfPromise = new GLTFLoader().setDRACOLoader(dracoLoader).loadAsync("/models/mesh.glb");
+
+  const ifcApi = new WebIFC.IfcAPI();
+  ifcApi.SetWasmPath("/", true);
+  await ifcApi.Init();
+
+  const response = await fetch("/models/reinli.ifc");
+  const buffer = new Uint8Array(await response.arrayBuffer());
+  const modelID = ifcApi.OpenModel(buffer, { COORDINATE_TO_ORIGIN: true });
+
+  // Build reverse lookup: IFC type number → name string (e.g. 3701648567 → "IFCWALL")
+  const ifcTypeNames = {};
+  for (const [k, v] of Object.entries(WebIFC)) {
+    if (typeof v === "number" && k.startsWith("IFC")) ifcTypeNames[v] = k;
+  }
+
+  // Shared materials per colour
+  const materials = new Map();
+  function getMaterial(r, g, b, a) {
+    const key = `${r.toFixed(2)},${g.toFixed(2)},${b.toFixed(2)},${a.toFixed(2)}`;
+    if (!materials.has(key)) {
+      const mat = new THREE.MeshLambertMaterial({
+        color: new THREE.Color(r, g, b),
+        transparent: a < 0.99,
+        opacity: a,
+        side: THREE.DoubleSide,
+      });
+      mat.userData.baseOpacity = a;
+      materials.set(key, mat);
+    }
+    return materials.get(key);
+  }
+
+  // All renderable meshes (for raycasting)
+  const pickableMeshes = [];
+  const ifcGroup = new THREE.Group();
+
+  ifcApi.StreamAllMeshes(modelID, (mesh) => {
+    const placed = mesh.geometries;
+    for (let i = 0; i < placed.size(); i++) {
+      const p = placed.get(i);
+      const geom = ifcApi.GetGeometry(modelID, p.geometryExpressID);
+      const idxData = ifcApi.GetIndexArray(geom.GetIndexData(), geom.GetIndexDataSize());
+      const vertData = ifcApi.GetVertexArray(geom.GetVertexData(), geom.GetVertexDataSize());
+
+      const positions = new Float32Array(vertData.length / 2);
+      const normals = new Float32Array(vertData.length / 2);
+      for (let j = 0; j < vertData.length; j += 6) {
+        const b = j / 2;
+        positions[b] = vertData[j];
+        positions[b + 1] = vertData[j + 1];
+        positions[b + 2] = vertData[j + 2];
+        normals[b] = vertData[j + 3];
+        normals[b + 1] = vertData[j + 4];
+        normals[b + 2] = vertData[j + 5];
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+      geometry.setIndex(new THREE.BufferAttribute(idxData, 1));
+
+      const col = p.color;
+      const mesh3 = new THREE.Mesh(geometry, getMaterial(col.x, col.y, col.z, col.w));
+
+      const m = p.flatTransformation;
+      mesh3.matrix.set(
+        m[0],
+        m[4],
+        m[8],
+        m[12],
+        m[1],
+        m[5],
+        m[9],
+        m[13],
+        m[2],
+        m[6],
+        m[10],
+        m[14],
+        m[3],
+        m[7],
+        m[11],
+        m[15],
+      );
+      mesh3.matrixAutoUpdate = false;
+      mesh3.userData.expressID = mesh.expressID;
+
+      ifcGroup.add(mesh3);
+      pickableMeshes.push(mesh3);
+      geom.delete();
+    }
+  });
+
+  scene.add(ifcGroup);
+
+  // Build property-set lookup: expressID → [{setName, props:[{name,value}]}]
+  const elementPsets = new Map();
+  try {
+    const relIDs = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES);
+    for (let i = 0; i < relIDs.size(); i++) {
+      try {
+        const rel = ifcApi.GetLine(modelID, relIDs.get(i), false);
+        const psetID = rel.RelatingPropertyDefinition?.value;
+        if (!psetID) continue;
+        const pdef = ifcApi.GetLine(modelID, psetID, false);
+        if (!pdef || pdef.type !== WebIFC.IFCPROPERTYSET) continue;
+        const setName = pdef.Name?.value ?? "";
+        const propIDs = (pdef.HasProperties ?? []).map((h) => h.value).filter(Boolean);
+        const props = [];
+        for (const pid of propIDs) {
+          try {
+            const p = ifcApi.GetLine(modelID, pid, false);
+            if (p.type !== WebIFC.IFCPROPERTYSINGLEVALUE) continue;
+            const name = p.Name?.value ?? "";
+            const val = p.NominalValue?.value;
+            if (name && val != null && val !== "") props.push({ name, value: String(val) });
+          } catch {}
+        }
+        if (!props.length) continue;
+        for (const obj of rel.RelatedObjects ?? []) {
+          const id = obj.value;
+          if (!id) continue;
+          if (!elementPsets.has(id)) elementPsets.set(id, []);
+          elementPsets.get(id).push({ setName, props });
+        }
+      } catch {}
+    }
+  } catch {}
+
+  // Ensure world matrices are current for raycasting
+  scene.updateMatrixWorld();
+
+  // ── Fit camera ────────────────────────────────────────────────────────────
+
+  const bbox = new THREE.Box3().setFromObject(ifcGroup);
+  const center = bbox.getCenter(new THREE.Vector3());
+  const size = bbox.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+
+  controls.target.copy(center);
+  camera.position.set(center.x + maxDim, center.y + maxDim * 0.75, center.z + maxDim);
+  camera.lookAt(center);
+  controls.update();
+
+  // ── Element selection ─────────────────────────────────────────────────────
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  const highlightMat = new THREE.MeshLambertMaterial({
+    color: 0xc8b89a,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.85,
+  });
+  let selectedMeshes = [];
+
+  function deselect() {
+    for (const { mesh, mat } of selectedMeshes) mesh.material = mat;
+    selectedMeshes = [];
+    infoPanel.classList.add("hidden");
+  }
+
+  function select(expressID) {
+    deselect();
+    for (const m of pickableMeshes) {
+      if (m.userData.expressID !== expressID) continue;
+      selectedMeshes.push({ mesh: m, mat: m.material });
+      m.material = highlightMat;
+    }
+
+    const line = ifcApi.GetLine(modelID, expressID, false);
+    const typeName = ifcTypeNames[line.type] ?? `Type ${line.type}`;
+console.log(typeName);
+    const name = line.Name?.value ?? line.ObjectType?.value ?? "—";
+	
+switch (typeName) {
+  case "IFCCOLUMN":
+    infoType.textContent = "Stav";
+    break;
+
+  case "IFCBEAM":
+    infoType.textContent = "Bjelke";
+    break;
+
+  case "IFCWALL":
+    infoType.textContent = "Veggtile";
+    break;
+
+  case "IFCROOF":
+    infoType.textContent = "Tak";
+    break;
+
+  case "IFCSLAB":
+    infoType.textContent = "Arkeologisk felt";
+    break;
+
+  case "IFCDOOR":
+    infoType.textContent = "Dør";
+    break;
+
+  case "IFCMEMBER":
+    infoType.textContent = "Stav";
+    break;
+
+  default:
+    infoType.textContent = typeName.replace("IFC", "");
+}
+    infoName.textContent = name;
+
+    const psets = elementPsets.get(expressID) ?? [];
+    const arkiv = psets.find((s) => s.setName === "Arkiv");
+
+if (arkiv) {
+  infoProps.innerHTML = arkiv.props
+    .map(
+      ({ name, value }) =>
+        `<div class="info-prop">
+          <span class="info-key">${name}</span>
+          <span class="info-val">${value}</span>
+        </div>`,
+    )
+    .join("");
+} else {
+  infoProps.innerHTML = "<p>Ingen arkivinformasjon tilgjengelig.</p>";
+}
+
+    infoPanel.classList.remove("hidden");
+  }
+
+  // Distinguish click from drag
+  let pointerMoved = false;
+  renderer.domElement.addEventListener("pointerdown", () => {
+    pointerMoved = false;
+  });
+  renderer.domElement.addEventListener("pointermove", () => {
+    pointerMoved = true;
+  });
+  renderer.domElement.addEventListener("pointerup", (e) => {
+    if (pointerMoved) return;
+    mouse.x = (e.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(pickableMeshes);
+    hits.length ? select(hits[0].object.userData.expressID) : deselect();
+  });
+
+  infoClose.addEventListener("click", deselect);
+
+  recenterBtn.addEventListener("click", () => {
+    controls.target.copy(center);
+    camera.position.set(center.x + maxDim, center.y + maxDim * 0.75, center.z + maxDim);
+    controls.update();
+  });
+
+  // ── Point cloud (GLTF mesh) ────────────────────────────────────────────────
+
+  const gltf = await gltfPromise;
+  const cloud = gltf.scene;
+
+  // GLTF from Autodesk is Z-up despite spec — rotate to Y-up before computing bounds
+  cloud.rotation.x = -Math.PI / 2;
+  cloud.updateMatrixWorld(true);
+
+  // Align to IFC model: center X/Z, pin floor on Y
+  const gltfBox = new THREE.Box3().setFromObject(cloud);
+  const gltfCenter = gltfBox.getCenter(new THREE.Vector3());
+  const baseTx = center.x - gltfCenter.x;
+  const cloudTy = bbox.min.y - gltfBox.min.y;
+  const baseTz = center.z - gltfCenter.z;
+
+  let dX = 0.85,
+    dY = 0.75,
+    dZ = 0,
+    rX = 0,
+    rY = 6.5,
+    rZ = 0;
+
+  // Fix cloud at aligned position — it stays put while debug mode moves the IFC
+  cloud.position.set(baseTx, cloudTy, baseTz);
+  scene.add(cloud);
+
+  ifcGroup.visible = false;
+
+  cloudToggleBtn.addEventListener("click", () => {
+    ifcGroup.visible = !ifcGroup.visible;
+    cloudToggleBtn.classList.toggle("active", ifcGroup.visible);
+    document.getElementById("model-opacity-wrap").style.display = ifcGroup.visible ? "" : "none";
+  });
+
+  function applyModelOpacity() {
+    const t = modelOpacityEl.value / 100;
+    for (const mat of materials.values()) {
+      mat.opacity = mat.userData.baseOpacity * t;
+      mat.transparent = mat.opacity < 0.99;
+    }
+  }
+  modelOpacityEl.addEventListener("input", applyModelOpacity);
+  applyModelOpacity();
+
+  function applyDebug() {
+    ifcGroup.position.set(dX, dY, dZ);
+    ifcGroup.rotation.set((rX * Math.PI) / 180, (rY * Math.PI) / 180, (rZ * Math.PI) / 180);
+    if (DEBUG)
+      debugValsEl.textContent =
+        `X ${dX.toFixed(3)}  Y ${dY.toFixed(3)}  Z ${dZ.toFixed(3)}\n` +
+        `rX ${rX.toFixed(1)}°  rY ${rY.toFixed(1)}°  rZ ${rZ.toFixed(1)}°`;
+  }
+  applyDebug();
+
+  if (DEBUG) {
+    document.getElementById("debug-panel").style.display = "block";
+    window.addEventListener("keydown", (e) => {
+      const s = e.shiftKey ? 0.25 : 0.05,
+        r = e.shiftKey ? 2.5 : 0.5;
+      switch (e.key) {
+        case "w":
+          dZ -= s;
+          break;
+        case "s":
+          dZ += s;
+          break;
+        case "a":
+          dX -= s;
+          break;
+        case "d":
+          dX += s;
+          break;
+        case "z":
+          dY += s;
+          break;
+        case "x":
+          dY -= s;
+          break;
+        case "q":
+          rY -= r;
+          break;
+        case "e":
+          rY += r;
+          break;
+        case "t":
+          rX -= r;
+          break;
+        case "g":
+          rX += r;
+          break;
+        case "f":
+          rZ -= r;
+          break;
+        case "h":
+          rZ += r;
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      applyDebug();
+    });
+  }
+
+  // ── Done ──────────────────────────────────────────────────────────────────
+
+  document.querySelector(".loader-bar").classList.add("done", "ready");
+  enterBtn.addEventListener(
+    "click",
+    () => {
+      loaderEl.classList.add("hidden");
+      let hintTimer = setTimeout(() => hintEl.classList.add("fade"), 5000);
+      renderer.domElement.addEventListener("pointerdown", () => {
+        hintEl.classList.remove("fade");
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(() => hintEl.classList.add("fade"), 5000);
+      });
+    },
+    { once: true },
+  );
+
+  renderer.setAnimationLoop(() => {
+    controls.update();
+    renderer.render(scene, camera);
+  });
+} catch (err) {
+  const isSafariVersion = err.message?.includes("emscripten") || err.message?.includes("Safari");
+  loaderBody.textContent = isSafariVersion
+    ? "Visningen krever Safari 15 eller nyere. Oppdater iOS og prøv igjen."
+    : "Kunne ikke laste modellen. Prøv å laste siden på nytt.";
+  document.querySelector(".loader-bar").style.display = "none";
+  enterBtn.style.display = "none";
+}
