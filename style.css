@@ -340,6 +340,83 @@ header {
     border-color: rgba(200, 184, 154, 0.8);
 }
 
+/* ── Tour controls ── */
+#tour-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+#tour-select {
+    background: rgba(200, 184, 154, 0.07);
+    border: 1px solid rgba(200, 184, 154, 0.6);
+    border-radius: 2rem;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding: 0.45rem 1rem;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+    outline: none;
+}
+
+#tour-select:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+#tour-select:focus {
+    border-color: var(--accent);
+}
+
+#tour-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+#tour-play,
+#tour-pause,
+#tour-stop {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(200, 184, 154, 0.07);
+    border: 1px solid rgba(200, 184, 154, 0.6);
+    border-radius: 50%;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 0.7rem;
+    width: 2rem;
+    height: 2rem;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+#tour-play:hover,
+#tour-pause:hover,
+#tour-stop:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+#tour-play:disabled,
+#tour-pause:disabled,
+#tour-stop:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+#tour-play.active,
+#tour-pause.active {
+    color: #0a0a0f;
+    border-color: var(--accent);
+    background: var(--accent);
+}
+
 #mesh-toggle.loading {
     opacity: 0.6;
     cursor: wait;
