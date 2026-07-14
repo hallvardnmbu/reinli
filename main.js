@@ -94,6 +94,227 @@ try {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
 
+  // ── Camera Tour System ────────────────────────────────────────────────────
+
+  // Cubic easing function (in-out)
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  // Camera tour state
+  const tourState = {
+    active: false,
+    paused: false,
+    currentTour: null,
+    startTime: 0,
+    pauseTime: 0,
+    totalPausedTime: 0,
+    duration: 0,
+    waypoints: []
+  };
+
+  // Define camera tours (positions and look-at targets)
+  const tours = {
+    overview: {
+      name: "Oversikt",
+      duration: 25000, // 25 seconds
+      waypoints: [
+        { pos: [40, 25, 40], target: [0, 5, 0], duration: 0.2 },
+        { pos: [0, 35, 50], target: [0, 5, 0], duration: 0.25 },
+        { pos: [-45, 30, 20], target: [0, 8, 0], duration: 0.25 },
+        { pos: [-30, 25, -40], target: [0, 5, 0], duration: 0.15 },
+        { pos: [30, 30, -35], target: [0, 8, 0], duration: 0.15 }
+      ]
+    },
+    interior: {
+      name: "Interiør",
+      duration: 28000, // 28 seconds
+      waypoints: [
+        { pos: [0, 2, 15], target: [0, 5, 0], duration: 0.15 },
+        { pos: [0, 3, 8], target: [0, 6, -5], duration: 0.2 },
+        { pos: [0, 4, 0], target: [0, 8, -10], duration: 0.2 },
+        { pos: [0, 5, -8], target: [0, 10, -15], duration: 0.2 },
+        { pos: [0, 4, -12], target: [0, 8, -18], duration: 0.15 },
+        { pos: [0, 3, -5], target: [0, 6, 5], duration: 0.1 }
+      ]
+    },
+    details: {
+      name: "Detaljer",
+      duration: 30000, // 30 seconds
+      waypoints: [
+        { pos: [8, 8, 8], target: [5, 6, 5], duration: 0.15 },
+        { pos: [6, 12, 4], target: [4, 10, 2], duration: 0.2 },
+        { pos: [-5, 10, 6], target: [-3, 8, 4], duration: 0.2 },
+        { pos: [-8, 6, -4], target: [-5, 5, -2], duration: 0.15 },
+        { pos: [4, 15, -6], target: [2, 12, -4], duration: 0.15 },
+        { pos: [10, 8, 0], target: [6, 6, 0], duration: 0.15 }
+      ]
+    }
+  };
+
+  // Interpolate between two waypoints
+  function interpolateWaypoint(wp1, wp2, t) {
+    const eased = easeInOutCubic(t);
+    return {
+      pos: [
+        wp1.pos[0] + (wp2.pos[0] - wp1.pos[0]) * eased,
+        wp1.pos[1] + (wp2.pos[1] - wp1.pos[1]) * eased,
+        wp1.pos[2] + (wp2.pos[2] - wp1.pos[2]) * eased
+      ],
+      target: [
+        wp1.target[0] + (wp2.target[0] - wp1.target[0]) * eased,
+        wp1.target[1] + (wp2.target[1] - wp1.target[1]) * eased,
+        wp1.target[2] + (wp2.target[2] - wp1.target[2]) * eased
+      ]
+    };
+  }
+
+  // Update camera position during tour
+  function updateTour() {
+    if (!tourState.active || tourState.paused) return;
+
+    const elapsed = Date.now() - tourState.startTime - tourState.totalPausedTime;
+    const progress = Math.min(elapsed / tourState.duration, 1);
+
+    if (progress >= 1) {
+      stopTour();
+      return;
+    }
+
+    // Find current segment
+    const waypoints = tourState.waypoints;
+    let accumulatedDuration = 0;
+    let currentSegment = 0;
+
+    for (let i = 0; i < waypoints.length - 1; i++) {
+      const segmentDuration = waypoints[i].duration;
+      if (progress <= accumulatedDuration + segmentDuration) {
+        currentSegment = i;
+        break;
+      }
+      accumulatedDuration += segmentDuration;
+    }
+
+    // Interpolate within current segment
+    const wp1 = waypoints[currentSegment];
+    const wp2 = waypoints[currentSegment + 1];
+    const segmentProgress = (progress - accumulatedDuration) / wp1.duration;
+    const interpolated = interpolateWaypoint(wp1, wp2, segmentProgress);
+
+    // Update camera
+    camera.position.set(...interpolated.pos);
+    controls.target.set(...interpolated.target);
+    controls.update();
+  }
+
+  // Start a tour
+  function startTour(tourName) {
+    const tour = tours[tourName];
+    if (!tour) return;
+
+    // Disable manual controls during tour
+    controls.enabled = false;
+
+    tourState.active = true;
+    tourState.paused = false;
+    tourState.currentTour = tourName;
+    tourState.startTime = Date.now();
+    tourState.totalPausedTime = 0;
+    tourState.duration = tour.duration;
+    tourState.waypoints = tour.waypoints;
+
+    updateTourUI();
+  }
+
+  // Pause tour
+  function pauseTour() {
+    if (!tourState.active || tourState.paused) return;
+    tourState.paused = true;
+    tourState.pauseTime = Date.now();
+    updateTourUI();
+  }
+
+  // Resume tour
+  function resumeTour() {
+    if (!tourState.active || !tourState.paused) return;
+    tourState.paused = false;
+    tourState.totalPausedTime += Date.now() - tourState.pauseTime;
+    updateTourUI();
+  }
+
+  // Stop tour
+  function stopTour() {
+    tourState.active = false;
+    tourState.paused = false;
+    tourState.currentTour = null;
+    controls.enabled = true;
+    updateTourUI();
+  }
+
+  // Update UI button states
+  function updateTourUI() {
+    const playBtn = document.getElementById("tour-play");
+    const pauseBtn = document.getElementById("tour-pause");
+    const stopBtn = document.getElementById("tour-stop");
+    const selectEl = document.getElementById("tour-select");
+
+    if (tourState.active) {
+      playBtn.disabled = true;
+      pauseBtn.disabled = false;
+      stopBtn.disabled = false;
+      selectEl.disabled = true;
+
+      if (tourState.paused) {
+        playBtn.disabled = false;
+        playBtn.classList.remove("active");
+        pauseBtn.classList.remove("active");
+      } else {
+        pauseBtn.classList.add("active");
+      }
+    } else {
+      playBtn.disabled = !selectEl.value;
+      pauseBtn.disabled = true;
+      stopBtn.disabled = true;
+      selectEl.disabled = false;
+      playBtn.classList.remove("active");
+      pauseBtn.classList.remove("active");
+    }
+  }
+
+  // Wire up tour controls
+  const tourSelect = document.getElementById("tour-select");
+  const tourPlayBtn = document.getElementById("tour-play");
+  const tourPauseBtn = document.getElementById("tour-pause");
+  const tourStopBtn = document.getElementById("tour-stop");
+
+  tourSelect.addEventListener("change", () => {
+    updateTourUI();
+  });
+
+  tourPlayBtn.addEventListener("click", () => {
+    if (tourState.paused) {
+      resumeTour();
+    } else {
+      const selectedTour = tourSelect.value;
+      if (selectedTour) {
+        startTour(selectedTour);
+      }
+    }
+  });
+
+  tourPauseBtn.addEventListener("click", () => {
+    pauseTour();
+  });
+
+  tourStopBtn.addEventListener("click", () => {
+    stopTour();
+  });
+
+  // Initialize UI
+  updateTourUI();
+
+  // ── Slider touch handling ─────────────────────────────────────────────────
+
   function bindSliderTouch(slider) {
     slider.addEventListener("pointerdown", (e) => {
       slider.setPointerCapture(e.pointerId);
@@ -483,6 +704,7 @@ try {
   );
 
   renderer.setAnimationLoop(() => {
+    updateTour();
     controls.update();
     renderer.render(scene, camera);
   });

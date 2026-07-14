@@ -54,6 +54,19 @@
                         <span id="cloud-toggle-label">Modell</span>
                     </button>
                 </div>
+                <div id="tour-controls">
+                    <select id="tour-select">
+                        <option value="">Velg kameratur</option>
+                        <option value="overview">Oversikt</option>
+                        <option value="interior">Interiør</option>
+                        <option value="details">Detaljer</option>
+                    </select>
+                    <div id="tour-buttons">
+                        <button id="tour-play" data-tip="Start tur" disabled>▶</button>
+                        <button id="tour-pause" data-tip="Pause" disabled>⏸</button>
+                        <button id="tour-stop" data-tip="Stopp" disabled>⏹</button>
+                    </div>
+                </div>
                 <div class="opacity-row">
                     <span class="opacity-label">Lysstyrke</span>
                     <input type="range" id="brightness" min="25" max="200" value="100" />
