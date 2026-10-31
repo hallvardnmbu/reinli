@@ -1,22 +1,6 @@
-import { join } from "path";
+import { join, resolve, sep } from "path";
 
 const dir = join(import.meta.dir, "dist");
-
-const MIME = {
-  ".html": "text/html; charset=utf-8",
-  ".js":   "application/javascript",
-  ".mjs":  "application/javascript",
-  ".css":  "text/css",
-  ".wasm": "application/wasm",
-  ".glb":  "model/gltf-binary",
-  ".ifc":  "application/octet-stream",
-  ".ico":  "image/x-icon",
-};
-
-function mimeType(path) {
-  const ext = path.match(/\.[^./]+$/)?.[0] ?? "";
-  return MIME[ext] ?? "application/octet-stream";
-}
 
 function cacheControl(pathname) {
   if (pathname === "/" || pathname === "/index.html") {
@@ -30,30 +14,41 @@ function cacheControl(pathname) {
   return "public, max-age=604800";
 }
 
+const fallback = () =>
+  new Response(Bun.file(join(dir, "index.html")), {
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache, no-store, must-revalidate" },
+  });
+
 export default async function reinli(request) {
-  const url = new URL(request.url);
-  const filePath = url.pathname === "/" ? "/index.html" : url.pathname;
-  const absPath = join(dir, filePath);
+  const { pathname } = new URL(request.url);
 
-  const headers = {
-    "Content-Type": mimeType(absPath),
-    "Cache-Control": cacheControl(filePath),
-    "Vary": "Accept-Encoding",
-  };
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return new Response("Bad request", { status: 400 });
+  }
+  if (decoded.includes("\0")) return new Response("Bad request", { status: 400 });
 
-  const acceptsGzip = request.headers.get("Accept-Encoding")?.includes("gzip");
+  const filePath = decoded === "/" ? "/index.html" : decoded;
+  const absPath = resolve(dir, "." + filePath);
+  if (!absPath.startsWith(dir + sep)) return new Response("Forbidden", { status: 403 });
 
-  if (acceptsGzip) {
+  // Content-Type is left to Bun (derived from the extension); the `.gz` variant is
+  // served with the original file's type.
+  const headers = { "Cache-Control": cacheControl(filePath), Vary: "Accept-Encoding" };
+  const file = Bun.file(absPath);
+
+  if (request.headers.get("Accept-Encoding")?.includes("gzip")) {
     const gz = Bun.file(absPath + ".gz");
     if (await gz.exists()) {
-      return new Response(gz, { headers: { ...headers, "Content-Encoding": "gzip" } });
+      return new Response(gz, { headers: { ...headers, "Content-Type": file.type, "Content-Encoding": "gzip" } });
     }
   }
 
-  const file = Bun.file(absPath);
   if (await file.exists()) return new Response(file, { headers });
 
-  return new Response(Bun.file(join(dir, "index.html")), {
-    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache, no-store, must-revalidate" },
-  });
+  // SPA fallback only for extensionless routes; a missing asset is a real 404.
+  if (/\.[^/]+$/.test(filePath)) return new Response("Not found", { status: 404 });
+  return fallback();
 }
